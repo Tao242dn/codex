@@ -277,6 +277,44 @@ fn maybe_wrap_shell_lc_with_snapshot_keeps_snapshot_path_without_override() {
 }
 
 #[test]
+fn shell_snapshot_override_env_preserves_inherited_path() {
+    let dir = tempdir().expect("create temp dir");
+    let snapshot_path = dir.path().join("snapshot.sh");
+    std::fs::write(
+        &snapshot_path,
+        "# Snapshot file\nexport PATH='/snapshot/bin'\n",
+    )
+    .expect("write snapshot");
+    let session_shell = shell_with_snapshot(
+        ShellType::Bash,
+        "/bin/bash",
+        snapshot_path,
+        dir.path().to_path_buf(),
+    );
+    let command = vec![
+        "/bin/bash".to_string(),
+        "-lc".to_string(),
+        "printf '%s' \"$PATH\"".to_string(),
+    ];
+    let env = HashMap::from([("PATH".to_string(), "/worktree/bin".to_string())]);
+    let snapshot_override_env = shell_snapshot_override_env(&env, &HashMap::new());
+    let rewritten = maybe_wrap_shell_lc_with_snapshot(
+        &command,
+        &session_shell,
+        dir.path(),
+        &snapshot_override_env,
+    );
+    let output = Command::new(&rewritten[0])
+        .args(&rewritten[1..])
+        .env("PATH", "/worktree/bin")
+        .output()
+        .expect("run rewritten command");
+
+    assert!(output.status.success(), "command failed: {output:?}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "/worktree/bin");
+}
+
+#[test]
 fn maybe_wrap_shell_lc_with_snapshot_applies_explicit_path_override() {
     let dir = tempdir().expect("create temp dir");
     let snapshot_path = dir.path().join("snapshot.sh");

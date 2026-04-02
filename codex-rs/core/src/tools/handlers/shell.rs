@@ -34,6 +34,7 @@ use crate::tools::registry::ToolKind;
 use crate::tools::runtimes::shell::ShellRequest;
 use crate::tools::runtimes::shell::ShellRuntime;
 use crate::tools::runtimes::shell::ShellRuntimeBackend;
+use crate::tools::runtimes::shell_snapshot_override_env;
 use crate::tools::sandboxing::ToolCtx;
 use codex_features::Feature;
 use codex_protocol::models::PermissionProfile;
@@ -409,6 +410,8 @@ impl ShellHandler {
                 explicit_env_overrides.insert(key.clone(), value.clone());
             }
         }
+        let explicit_env_overrides =
+            shell_snapshot_override_env(&exec_params.env, &explicit_env_overrides);
 
         let exec_permission_approvals_enabled =
             session.features().enabled(Feature::ExecPermissionApprovals);

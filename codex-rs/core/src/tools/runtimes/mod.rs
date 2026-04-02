@@ -16,6 +16,25 @@ pub mod apply_patch;
 pub mod shell;
 pub mod unified_exec;
 
+/// Preserve selected environment variables after sourcing a shell snapshot.
+///
+/// The child process already receives `env`, so the wrapper only needs the
+/// variable names whose current values must win over snapshot exports.
+pub(crate) fn shell_snapshot_override_env(
+    env: &HashMap<String, String>,
+    explicit_env_overrides: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut overrides = explicit_env_overrides.clone();
+
+    if let Some(path) = env.get("PATH") {
+        overrides
+            .entry("PATH".to_string())
+            .or_insert_with(|| path.clone());
+    }
+
+    overrides
+}
+
 /// Shared helper to construct sandbox transform inputs from a tokenized command line.
 /// Validates that at least a program is present.
 pub(crate) fn build_sandbox_command(
@@ -52,7 +71,7 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     command: &[String],
     session_shell: &Shell,
     cwd: &Path,
-    explicit_env_overrides: &HashMap<String, String>,
+    snapshot_override_env: &HashMap<String, String>,
 ) -> Vec<String> {
     if cfg!(windows) {
         return command.to_vec();
@@ -95,7 +114,7 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         .iter()
         .map(|arg| format!(" '{}'", shell_single_quote(arg)))
         .collect::<String>();
-    let (override_captures, override_exports) = build_override_exports(explicit_env_overrides);
+    let (override_captures, override_exports) = build_override_exports(snapshot_override_env);
     let rewritten_script = if override_exports.is_empty() {
         format!(
             "if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
@@ -109,8 +128,8 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     vec![shell_path.to_string(), "-c".to_string(), rewritten_script]
 }
 
-fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (String, String) {
-    let mut keys = explicit_env_overrides
+fn build_override_exports(snapshot_override_env: &HashMap<String, String>) -> (String, String) {
+    let mut keys = snapshot_override_env
         .keys()
         .filter(|key| is_valid_shell_variable_name(key))
         .collect::<Vec<_>>();
